@@ -79,7 +79,7 @@ class PulseProcessing(strax.Plugin):
 
     depends_on = 'raw_records'
 
-    provides = ('records', 'diagnostic_records', 'aqmon_records',
+    provides = ('hits', 'diagnostic_records', 'aqmon_records',
                 'veto_regions', 'pulse_counts')
     data_kind = {k: k for k in provides}
 
@@ -93,7 +93,7 @@ class PulseProcessing(strax.Plugin):
             if p.endswith('records'):
                 dtype[p] = strax.record_dtype(record_length)
 
-        dtype['veto_regions'] = strax.hit_dtype
+        dtype['veto_regions'] = strax.protohit_dtype
         dtype['pulse_counts'] = pulse_count_dtype(n_tpc)
 
         return dtype
@@ -117,7 +117,13 @@ class PulseProcessing(strax.Plugin):
         ##
         # Process the TPC records
         ##
+
+        # Find noise levels
+        # This relies on record_i being accurate, so can't do it before veto
+        noise_amps = strax.get_noise(r)
+
         if self.config['tail_veto_threshold'] and len(r):
+            #
             r, r_vetoed, veto_regions = software_he_veto(
                 r, self.to_pe,
                 area_threshold=self.config['tail_veto_threshold'],
@@ -128,29 +134,27 @@ class PulseProcessing(strax.Plugin):
 
             # In the future, we'll probably want to sum the waveforms
             # inside the vetoed regions, so we can still save the "peaks".
+            # For now, we just delete them...
             del r_vetoed
 
         else:
-            veto_regions = np.zeros(0, dtype=strax.hit_dtype)
+            veto_regions = np.zeros(0, dtype=strax.protohit_dtype)
 
-        # Find hits
-        # -- before filtering,since this messes with the with the S/N
-        hits = strax.find_hits(r, threshold=self.config['hit_threshold'])
+        # Find intervals which are going to be hits
+        # This must be before deconvolution, since that worsens the S/N
+        proto_hits = strax.find_hits(r, threshold=self.config['hit_threshold'])
 
         if self.config['pmt_pulse_filter']:
-            # Filter to concentrate the PMT pulses
+            # Filter to concentrate / deconvolve the PMT pulses
             strax.filter_records(
                 r, np.array(self.config['pmt_pulse_filter']))
 
+        # Fine-tune then build hits
         le, re = self.config['save_outside_hits']
-        r = strax.cut_outside_hits(r, hits,
-                                   left_extension=le,
-                                   right_extension=re)
+        proto_hits = strax.fine_tune_hits(proto_hits)
+        hits = strax.build_hits(r, proto_hits, noise_amps)
 
-        # Probably overkill, but just to be sure...
-        strax.zero_out_of_bounds(r)
-
-        return dict(records=r,
+        return dict(hits=hits,
                     diagnostic_records=diagnostic_records,
                     aqmon_records=aqmon_records,
                     pulse_counts=pulse_counts,
@@ -235,7 +239,7 @@ def software_he_veto(records, to_pe,
 
     if not len(regions):
         # No veto anywhere in this data
-        return records, records[:0], np.zeros(0, strax.hit_dtype)
+        return records, records[:0], np.zeros(0, strax.protohit_dtype)
 
     # 3. Find pass_veto regios with big peaks inside the veto regions.
     # For this we compute a rough sum waveform (at low resolution,
