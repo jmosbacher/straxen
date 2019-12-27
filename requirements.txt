@@ -1,4 +1,4 @@
-strax>=0.8.3
+strax>=0.8.4
 tensorflow
 holoviews
 bokeh

@@ -23,12 +23,14 @@ export, __all__ = strax.exporter()
                  help="Minimum contributing PMTs needed to define a peak"),
     strax.Option('single_channel_peaks', default=False,
                  help='Whether single-channel peaks should be reported'),
-    strax.Option('peak_split_min_height', default=25,
-                 help="Minimum height in PE above a local sum waveform"
-                      "minimum, on either side, to trigger a split"),
-    strax.Option('peak_split_min_ratio', default=4,
-                 help="Minimum ratio between local sum waveform"
-                      "minimum and maxima on either side, to trigger a split"),
+    strax.Option('peak_split_gof_threshold', default=0.4,
+                 help='Natural breaks goodness of fit/split threshold to split '
+                      'a peak.'),
+    strax.Option('peak_split_min_area', default=40.,
+                 help='Minimum area to evaluate natural breaks criterion. '
+                      'Smaller peaks are not split.'),
+    strax.Option('peak_split_iterations', default=4.,
+                 help='Maximum number of recursive natural break peak splits to do.'),
     strax.Option('diagnose_sorting', track=False, default=False,
                  help="Enable runtime checks for sorting and disjointness"),
     strax.Option(
@@ -47,7 +49,7 @@ class Peaks(strax.Plugin):
     parallel = 'process'
     rechunk_on_save = True
 
-    __version__ = '0.1.1'
+    __version__ = '0.2.0'
 
     def infer_dtype(self):
         self.to_pe = get_to_pe(self.run_id,self.config['to_pe_file'])
@@ -77,8 +79,10 @@ class Peaks(strax.Plugin):
 
         peaks = strax.split_peaks(
             peaks, r, self.to_pe,
-            min_height=self.config['peak_split_min_height'],
-            min_ratio=self.config['peak_split_min_ratio'])
+            algorithm='natural_breaks',
+            threshold=self.config['peak_split_gof_threshold'],
+            min_area=self.config['peak_split_min_area'],
+            do_iterations=self.config['peak_split_iterations'])
 
         strax.compute_widths(peaks)
 
