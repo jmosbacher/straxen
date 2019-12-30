@@ -23,13 +23,18 @@ export, __all__ = strax.exporter()
                  help="Minimum contributing PMTs needed to define a peak"),
     strax.Option('single_channel_peaks', default=False,
                  help='Whether single-channel peaks should be reported'),
-    strax.Option('peak_split_gof_threshold', default=0.4,
+    strax.Option('peak_split_gof_threshold',
+                 default=((1, .7), (2, 0.7), (3.5, 0.5), (5, 0.4)),
                  help='Natural breaks goodness of fit/split threshold to split '
-                      'a peak.'),
+                      'a peak. Specify as (log10(area), threshold). Will be '
+                      'linearly interpolated in log10(area).'),
+    strax.Option('peak_split_filter_wing_width', default=70,
+                 help='Wing width of moving average filter for '
+                      'Low-Split natural breaks'),
     strax.Option('peak_split_min_area', default=40.,
                  help='Minimum area to evaluate natural breaks criterion. '
                       'Smaller peaks are not split.'),
-    strax.Option('peak_split_iterations', default=4.,
+    strax.Option('peak_split_iterations', default=20,
                  help='Maximum number of recursive natural break peak splits to do.'),
     strax.Option('diagnose_sorting', track=False, default=False,
                  help="Enable runtime checks for sorting and disjointness"),
@@ -49,7 +54,7 @@ class Peaks(strax.Plugin):
     parallel = 'process'
     rechunk_on_save = True
 
-    __version__ = '0.2.0'
+    __version__ = '0.2.1'
 
     def infer_dtype(self):
         self.to_pe = get_to_pe(self.run_id,self.config['to_pe_file'])
@@ -81,6 +86,8 @@ class Peaks(strax.Plugin):
             peaks, r, self.to_pe,
             algorithm='natural_breaks',
             threshold=self.config['peak_split_gof_threshold'],
+            split_low=True,
+            filter_wing_width=self.config['peak_split_filter_wing_width'],
             min_area=self.config['peak_split_min_area'],
             do_iterations=self.config['peak_split_iterations'])
 
