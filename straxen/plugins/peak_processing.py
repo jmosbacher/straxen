@@ -331,6 +331,8 @@ class NCompeting(strax.OverlapWindowPlugin):
         ('n_competing', np.int32,
             'Number of nearby larger or slightly smaller peaks')]
 
+    __version__ = '0.1.1'
+
     def get_window_size(self):
         return 2 * self.config['nearby_window']
 
@@ -351,11 +353,18 @@ class NCompeting(strax.OverlapWindowPlugin):
         left_i = 0
         right_i = 0
         for i, peak in enumerate(peaks):
+
             while t[left_i] + window < t[i] and left_i < n - 1:
+                # left_i is still outside window
                 left_i += 1
-            while t[right_i] - window < t[i] and right_i < n - 1:
+            # Now left_i is the first index inside the window
+
+            while t[right_i] - window < t[i] and right_i <= n - 1:
+                # right_i is still outside window
                 right_i += 1
-            results[i] = np.sum(a[left_i:right_i + 1] > a[i] * fraction)
+            # Now right_i is the first index beyond the window
+
+            results[i] = np.sum(a[left_i:right_i] > a[i] * fraction)
 
         return results - 1
 
