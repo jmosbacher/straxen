@@ -80,7 +80,9 @@ class Peaks(strax.Plugin):
             right_extension=self.config['peak_right_extension'],
             min_channels=self.config['peak_min_pmts'],
             result_dtype=self.dtype)
+
         strax.sum_waveform(peaks, r, self.to_pe)
+        strax.compute_widths(peaks)
 
         peaks = strax.split_peaks(
             peaks, r, self.to_pe,
@@ -90,8 +92,6 @@ class Peaks(strax.Plugin):
             filter_wing_width=self.config['peak_split_filter_wing_width'],
             min_area=self.config['peak_split_min_area'],
             do_iterations=self.config['peak_split_iterations'])
-
-        strax.compute_widths(peaks)
 
         # Compute tight coincidence level.
         # Making this a separate plugin would
