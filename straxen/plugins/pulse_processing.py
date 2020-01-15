@@ -2,7 +2,7 @@ import numba
 import numpy as np
 
 import strax
-from straxen import get_to_pe
+from straxen import get_to_pe, aux_repo, get_resource
 export, __all__ = strax.exporter()
 
 # Number of TPC PMTs. Hardcoded for now...
@@ -42,11 +42,7 @@ n_tpc = 248
     # PMT pulse processing options
     strax.Option(
         'pmt_pulse_filter',
-        default=(0.012, -0.119,
-                 2.435, -1.271, 0.357, -0.174, -0., -0.036,
-                 -0.028, -0.019, -0.025, -0.013, -0.03, -0.039,
-                 -0.005, -0.019, -0.012, -0.015, -0.029, 0.024,
-                 -0.007, 0.007, -0.001, 0.005, -0.002, 0.004, -0.002),
+        default='https://raw.githubusercontent.com/XENONnT/strax_auxiliary_files/master/filters_per_chan.npy',
         help='Linear filter to apply to pulses, will be normalized.'),
     strax.Option(
         'save_outside_hits',
@@ -71,7 +67,7 @@ class PulseProcessing(strax.Plugin):
     2. Apply software HE veto after high-energy peaks.
     3. Find hits, apply linear filter, and zero outside hits.
     """
-    __version__ = '0.0.3'
+    __version__ = '0.0.4'
 
     parallel = 'process'
     rechunk_on_save = False
@@ -100,6 +96,8 @@ class PulseProcessing(strax.Plugin):
 
     def setup(self):
         self.to_pe = get_to_pe(self.run_id, self.config['to_pe_file'])
+        if type(self.config['pmt_pulse_filter']) == str:
+            self.filters = get_resource(self.config['pmt_pulse_filter'], fmt = 'npy_pickle')[()]
 
     def compute(self, raw_records):
         # Do not trust in DAQ + strax.baseline to leave the
@@ -139,10 +137,29 @@ class PulseProcessing(strax.Plugin):
             hits = strax.find_hits(r, threshold=self.config['hit_threshold'])
 
             if self.config['pmt_pulse_filter']:
-                # Filter to concentrate the PMT pulses
-                strax.filter_records(
-                    r, np.array(self.config['pmt_pulse_filter']))
-
+                if type(self.config['pmt_pulse_filter']) is not str:
+                    # Filter to concentrate the PMT pulses
+                    strax.filter_records(
+                        r, np.array(self.config['pmt_pulse_filter']))
+                else:
+                    for ch in range(len(self.to_pe)):
+                        ws = r[r['channel'] == ch]
+                        if len(ws) == 0:
+                            continue
+                        if ch in self.filters.keys():
+                            _filter = self.filters[ch].astype(np.float32)
+                        else:
+                            # TODO
+                            #  There is no filter for the requested channel use filter for channel 45
+                            fallback_ch = 45
+                            _filter = self.filters[fallback_ch].astype(np.float32)
+                        strax.filter_records(ws, _filter)
+                        if ch == 0:
+                            r_ch_i = ws
+                        else:
+                            r_ch_i = np.concatenate((r_ch_i, ws))
+                        strax.sort_by_time(r_ch_i)
+                    r = r_ch_i
             le, re = self.config['save_outside_hits']
             r = strax.cut_outside_hits(r, hits,
                                        left_extension=le,
