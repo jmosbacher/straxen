@@ -217,3 +217,46 @@ class NCompeting(strax.OverlapWindowPlugin):
             results[i] = np.sum(a[left_i:right_i + 1] > a[i] * fraction)
 
         return results - 1
+
+@strax.takes_config(
+    strax.Option('min_area_fraction', default=0.5,
+                 help='The area of competing peaks must be at least '
+                      'this fraction of that of the considered peak'),
+    strax.Option('nearby_window', default=int(1e7),
+                 help='Peaks starting within this time window (on either side)'
+                      'in ns count as nearby.'),
+    strax.Option('peak_max_proximity_time', default=int(1e9),
+                 help='Maximum value for proximity values such as '
+                      't_to_next_peak [ns]'))
+class PeakProximity(strax.OverlapWindowPlugin):
+    depends_on = ('peak_basics',)
+    provides = 'peak_proximity'
+    dtype = [
+        ('n_competing_left', np.int32,
+         'Number of larger or slightly smaller peaks left of the main peak'),
+        ('t_to_prev_peak', np.int64,
+         'Time between end of previous peak and start of this peak [ns]'),
+        ('t_to_next_peak', np.int64,
+         'Time between end of this peak and start of next peak [ns]'),
+        ('t_to_nearest_peak', np.int64,
+         'Smaller of t_to_prev_peak and t_to_next_peak [ns]')]
+    __version__ = '0.3.4'
+    def get_window_size(self):
+        return self.config['peak_max_proximity_time']
+
+    def compute(self, peaks):
+        windows = strax.touching_windows(peaks, peaks,
+                                         window=self.config['nearby_window'])
+
+        t_to_prev_peak = (
+                np.ones(len(peaks), dtype=np.int64)
+                * self.config['peak_max_proximity_time'])
+        t_to_prev_peak[1:] = peaks['time'][1:] - peaks['endtime'][:-1]
+
+        t_to_next_peak = t_to_prev_peak.copy()
+        t_to_next_peak[:-1] = peaks['time'][1:] - peaks['endtime'][:-1]
+
+        return dict(
+            t_to_prev_peak=t_to_prev_peak,
+            t_to_next_peak=t_to_next_peak,
+            t_to_nearest_peak=np.minimum(t_to_prev_peak, t_to_next_peak))
