@@ -17,7 +17,7 @@ export, __all__ = strax.exporter()
     strax.Option('n_top_pmts', default=127,
                  help="Number of top PMTs"))
 class PeakBasics(strax.Plugin):
-    __version__ = "0.0.4"
+    __version__ = "0.0.5"
     parallel = True
     depends_on = ('peaks',)
     provides = 'peak_basics'
@@ -49,13 +49,15 @@ class PeakBasics(strax.Plugin):
         (('Hits within tight range of mean',
           'tight_coincidence'), np.int16),
         (('Classification of the peak(let)',
-          'type'), np.int8)
+          'type'), np.int8),
+        (('number of hits',
+          'n_hits'),np.int32)
     ]
 
     def compute(self, peaks):
         p = peaks
         r = np.zeros(len(p), self.dtype)
-        for q in 'time length dt area type'.split():
+        for q in 'time length dt area type n_hits'.split():
             r[q] = p[q]
         r['endtime'] = p['time'] + p['dt'] * p['length']
         r['n_channels'] = (p['area_per_channel'] > 0).sum(axis=1)
