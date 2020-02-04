@@ -218,6 +218,7 @@ class NCompeting(strax.OverlapWindowPlugin):
 
         return results - 1
 
+@export
 @strax.takes_config(
     strax.Option('min_area_fraction', default=0.5,
                  help='The area of competing peaks must be at least '
@@ -230,8 +231,9 @@ class NCompeting(strax.OverlapWindowPlugin):
                       't_to_next_peak [ns]'))
 class PeakProximity(strax.OverlapWindowPlugin):
     depends_on = ('peak_basics',)
-    provides = 'peak_proximity'
     dtype = [
+        ('n_competing', np.int32,
+         'Number of nearby larger or slightly smaller peaks'),
         ('n_competing_left', np.int32,
          'Number of larger or slightly smaller peaks left of the main peak'),
         ('t_to_prev_peak', np.int64,
@@ -240,13 +242,19 @@ class PeakProximity(strax.OverlapWindowPlugin):
          'Time between end of this peak and start of next peak [ns]'),
         ('t_to_nearest_peak', np.int64,
          'Smaller of t_to_prev_peak and t_to_next_peak [ns]')]
+
     __version__ = '0.3.4'
+
     def get_window_size(self):
         return self.config['peak_max_proximity_time']
 
     def compute(self, peaks):
         windows = strax.touching_windows(peaks, peaks,
                                          window=self.config['nearby_window'])
+        n_left, n_tot = self.find_n_competing(
+            peaks,
+            windows,
+            fraction=self.config['min_area_fraction'])
 
         t_to_prev_peak = (
                 np.ones(len(peaks), dtype=np.int64)
@@ -257,6 +265,23 @@ class PeakProximity(strax.OverlapWindowPlugin):
         t_to_next_peak[:-1] = peaks['time'][1:] - peaks['endtime'][:-1]
 
         return dict(
+            n_competing=n_tot,
+            n_competing_left=n_left,
             t_to_prev_peak=t_to_prev_peak,
             t_to_next_peak=t_to_next_peak,
             t_to_nearest_peak=np.minimum(t_to_prev_peak, t_to_next_peak))
+
+    @staticmethod
+    @numba.jit(nopython=True, nogil=True, cache=True)
+    def find_n_competing(peaks, windows, fraction):
+        n_left = np.zeros(len(peaks), dtype=np.int32)
+        n_tot = n_left.copy()
+        areas = peaks['area']
+
+        for i, peak in enumerate(peaks):
+            left_i, right_i = windows[i]
+            threshold = areas[i] * fraction
+            n_left[i] = np.sum(areas[left_i:i] > threshold)
+            n_tot[i] = n_left[i] + np.sum(areas[i + 1:right_i] > threshold)
+
+        return n_left, n_tot
